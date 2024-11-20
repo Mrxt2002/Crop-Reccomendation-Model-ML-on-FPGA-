@@ -1,0 +1,99 @@
+import numpy as np
+import pandas as pd
+from sklearn import linear_model
+from matplotlib import pyplot as plt
+from sklearn import linear_model
+from sklearn.preprocessing import PolynomialFeatures, StandardScaler
+from sklearn.linear_model import Ridge
+from sklearn.model_selection import cross_val_score
+from scipy import stats
+%matplotlib inline
+import matplotlib
+matplotlib .rcParams["figure.figsize"]=(20,10)
+# Reading the CSV file and skipping bad lines
+df = pd.read_csv("aug31.csv")  # Adjust 'sep' if a different delimiter is used
+
+# Display the first few rows
+df.head()
+def plot_scatter_chart(df1, YEAR, RH2M):
+    # Filter data for even values of GWETTOP and multiples of 3 in the given YEAR
+    RH2M2 = df[(df.YEAR == YEAR) & (df.RH2M % 2 == 0)]
+    RH2M3 = df[(df.YEAR == YEAR) & (df.RH2M % 3 == 0)]
+
+    # Assuming DOY (Day of Year) is a column in the dataframe
+    even_days = RH2M2['DOY'] % 2 == 0
+    multiple_of_three_days = RH2M3['DOY'] % 3 == 0
+
+    # Set figure size
+    matplotlib.rcParams['figure.figsize'] = (15, 10)
+
+    # Plot scatter plot for even days
+    plt.scatter(RH2M2.DOY[even_days], RH2M2.T2M[even_days], color='blue', label='Even Days', s=50)
+
+    # Plot scatter plot for days that are multiples of 3
+    plt.scatter(RH2M3.DOY[multiple_of_three_days], RH2M3.T2M[multiple_of_three_days], marker='+', color='green', label='Multiple of Three Days', s=50)
+
+    plt.xlabel('Day of Year (DOY)')
+    plt.ylabel('RH2M')
+    plt.title(f'Scatter Plot of RH2M vs DOY for Year {YEAR}')
+    plt.legend()
+    plt.grid(True)
+    plt.show()
+reg = linear_model.LinearRegression()
+reg.fit(df[['YEAR','DOY','RH2M']], df.T2M)
+# Outlier removal using Z-score[using Standard deviation techniques to sort out the data which has variation from  mean/median]
+df_no_outliers = df[(np.abs(stats.zscore(df[['YEAR', 'DOY', 'RH2M', 'T2M']])) < 3).all(axis=1)]
+
+# Defining the independent variables (X) and the dependent variable (y)
+X = df_no_outliers[['YEAR', 'DOY', 'RH2M']]
+y = df_no_outliers['T2M']
+
+# Adding polynomial features to capture non-linear relationships
+#
+poly = PolynomialFeatures(degree=2)
+X_poly = poly.fit_transform(X)
+
+# Feature scaling (Standardization)
+scaler = StandardScaler()
+X_scaled = scaler.fit_transform(X_poly)
+
+# Ridge regression with cross-validation
+ridge_reg = Ridge(alpha=1)  # You can adjust 'alpha' based on performance
+ridge_reg.fit(X_scaled, y)
+
+# Cross-validation to evaluate the model
+cv_scores = cross_val_score(ridge_reg, X_scaled, y, cv=10)  # 5-fold cross-validation
+
+# Print the average R-squared from cross-validation
+print(f"Average R-squared from cross-validation: {np.mean(cv_scores)}")
+
+# Fit the model on the entire dataset and show the R-squared score
+ridge_accuracy = ridge_reg.score(X_scaled, y)
+print(f"R-squared value with Ridge Regression after enhancements: {ridge_accuracy}")
+def predict_next_30_days(df, start_doy, rh2m_value, year=2024):
+   
+
+    future_doy = np.arange(start_doy, start_doy + 30)
+
+    future_data = pd.DataFrame({
+        'YEAR': year,
+        'DOY': future_doy,
+        'RH2M': rh2m_value
+    })
+
+    # Transform the future data with polynomial features and scale them
+    future_data_poly = poly.transform(future_data)
+    future_data_scaled = scaler.transform(future_data_poly)
+
+    # Predict the T2M values for the next 30 days
+    future_predictions = ridge_reg.predict(future_data_scaled)
+
+    # Create a DataFrame for the predictions
+    predictions_df = pd.DataFrame({
+        'Day of Year (DOY)': future_doy,
+        'Predicted T2M': future_predictions
+    })
+
+    return predictions_df
+predictions_df = predict_next_30_days(df, 245, 88.25)
+print(predictions_df)
